@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>إيران: قلب التصعيد — خريطة رقمية متحركة</title>
+  <link rel="stylesheet" href="vendor/fonts.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="wrap"><canvas id="stage"></canvas></div>
+
+  <div id="intro" class="overlay">
+    <div class="intro-box">
+      <div class="intro-kicker">غرفة العمليات الرقمية</div>
+      <h1>إيران: قلب التصعيد</h1>
+      <p>خريطة رقمية متحركة — ٥ مشاهد — كاميرا زوم وموشن غرافيك ومؤثرات صوتية</p>
+      <button id="start">▶ تشغيل العرض</button>
+      <div class="keys">
+        <span><kbd>مسافة</kbd> تشغيل/إيقاف</span>
+        <span><kbd>1</kbd>–<kbd>5</kbd> الانتقال للمشهد</span>
+        <span><kbd>←</kbd><kbd>→</kbd> تقديم/ترجيع</span>
+        <span><kbd>S</kbd> التعليق</span>
+        <span><kbd>H</kbd> إخفاء الواجهة</span>
+        <span><kbd>F</kbd> ملء الشاشة</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="controls" dir="ltr">
+    <button id="play" title="تشغيل/إيقاف">❚❚</button>
+    <div id="scrub">
+      <input type="range" id="seek" min="0" max="62" step="0.01" value="0">
+      <div id="marks"></div>
+    </div>
+    <span id="time">00:00 / 01:02</span>
+    <div class="scenes" id="scenes"></div>
+    <button id="subs" class="on" title="التعليق الصوتي كنص">VO</button>
+    <button id="mute" class="on" title="الصوت">♪</button>
+    <button id="wav" title="تصدير شريط المؤثرات الصوتية WAV">WAV</button>
+    <button id="fs" title="ملء الشاشة">⛶</button>
+  </div>
+
+  <script src="vendor/d3.min.js"></script>
+  <script src="vendor/topojson-client.min.js"></script>
+  <script src="data/world-50m.js"></script>
+  <script src="data/world-110m.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
