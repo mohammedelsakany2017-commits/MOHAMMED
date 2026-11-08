@@ -468,14 +468,136 @@
     tr(logo, "ADBE Position").setValue(CFG.logoCenter);
     shadow(logo, 2, 3, 90);
 
+    // ================================================================ OUTRO: شعار ثلاثي الأبعاد
+    // نفس قيم render_outro.py: كاميرا بعدسة 1500px، عرض الشعار 620px، سماكة 72px من 24 شريحة
+    var O = { dur: 4.0, focal: 1500, logoW: 620, depth: 72, slices: 24, cy: 900 };
+    var outro = proj.items.addComp("OUTRO_3D_LOGO", CFG.W, CFG.H, 1, O.dur, CFG.fps);
+    outro.parentFolder = fRoot;
+    outro.bgColor = [0, 0, 0];
+    outro.motionBlur = true;
+
+    var ox = CFG.W / 2;
+    var hdLogo = importFile("assets/logo_solid_hd.png", fAssets);
+    var sliceScale = O.logoW / hdLogo.width * 100;
+
+    // خلفية: توهّج أحمر داكن شعاعي
+    var obg = outro.layers.addSolid([0, 0, 0], "BG_RED_GLOW", CFG.W, CFG.H, 1, O.dur);
+    try {
+        var ramp = fx(obg, "ADBE Ramp");
+        ramp.property("ADBE Ramp-0001").setValue([ox, O.cy]);
+        ramp.property("ADBE Ramp-0002").setValue([70 / 255, 2 / 255, 14 / 255, 1]);
+        ramp.property("ADBE Ramp-0003").setValue([ox, O.cy + 720]);
+        ramp.property("ADBE Ramp-0004").setValue([0, 0, 0, 1]);
+        ramp.property("ADBE Ramp-0005").setValue(2); // Radial
+    } catch (eR) { warnings.push("تعذّر ضبط Gradient Ramp للخلفية."); }
+    var obo = tr(obg, "ADBE Opacity");
+    key(obo, 0.3, 0); key(obo, 1.6, 100); key(obo, 3.4, 100); key(obo, 4.0, 0);
+    obo.expression = 'clamp(value * (1 + 0.08 * Math.sin(time * 4)), 0, 100);';
+
+    // المتحكّم ثلاثي الأبعاد: كل الحركة هنا
+    var ctrl = outro.layers.addNull(O.dur);
+    ctrl.name = "LOGO_3D_CTRL";
+    ctrl.threeDLayer = true;
+    var cp = tr(ctrl, "ADBE Position");
+    key(cp, 0, [ox, O.cy, 3000]);
+    key(cp, 1.6, [ox, O.cy, 0], "out");
+    key(cp, 1.7, [ox, O.cy, 0]);
+    key(cp, 3.4, [ox, O.cy, -160]);
+    key(cp, 4.0, [ox, O.cy, 740]);
+    var ry = tr(ctrl, "ADBE Rotate Y");
+    key(ry, 0, 75); key(ry, 1.1, -6); key(ry, 1.6, 0); key(ry, 1.7, 0);
+    key(ry, 2.125, -28); key(ry, 2.55, 0); key(ry, 2.975, 28); key(ry, 3.4, 0); key(ry, 4.0, -60);
+    var rx = tr(ctrl, "ADBE Rotate X");
+    key(rx, 0, 32); key(rx, 1.6, 0, "out"); key(rx, 2.55, 7); key(rx, 3.4, 0);
+    var rz = tr(ctrl, "ADBE Rotate Z");
+    key(rz, 0, -12); key(rz, 1.6, 0, "out");
+
+    // التجسيم: شرائح من الشعار على عمق Z، الوجه الأمامي أبيض والجوانب رمادية
+    var front = null;
+    for (var si = O.slices; si >= 0; si--) {
+        var sl = outro.layers.add(hdLogo);
+        sl.threeDLayer = true;
+        sl.motionBlur = true;
+        sl.parent = ctrl;
+        tr(sl, "ADBE Position").setValue([0, 0, O.depth * si / O.slices - O.depth / 2]);
+        tr(sl, "ADBE Scale").setValue([sliceScale, sliceScale, 100]);
+        if (si === 0) {
+            sl.name = "LOGO_FRONT";
+            front = sl;
+            var fcol = fillColor(sl, "Face Color");
+            if (fcol) fcol.setValue([236 / 255, 236 / 255, 238 / 255, 1]);
+        } else {
+            sl.name = "LOGO_EXTRUDE_" + (si < 10 ? "0" : "") + si;
+            sl.shy = true;
+            var g = 0.46 - 0.18 * si / O.slices;
+            var scol = fillColor(sl, "Side Color");
+            if (scol) scol.setValue([g, g * 0.97, g, 1]);
+        }
+    }
+    outro.hideShyLayers = true;
+
+    // لمعة ضوئية تعبر الوجه الأمامي
+    try {
+        var sweep = fx(front, "CC Light Sweep");
+        var sc0 = sweep.property(1);
+        key(sc0, 1.5, [-300, 0], "linear");
+        key(sc0, 2.3, [hdLogo.width + 300, hdLogo.height], "linear");
+        sweep.property(2).setValue(-30);   // Direction
+    } catch (eS) { warnings.push("CC Light Sweep غير متاح — أضف اللمعة يدوياً على LOGO_FRONT."); }
+
+    var cam = outro.layers.addCamera("OUTRO_CAMERA", [ox, O.cy]);
+    tr(cam, "ADBE Position").setValue([ox, O.cy, -O.focal]);
+    cam.property("ADBE Camera Options Group").property("ADBE Camera Zoom").setValue(O.focal);
+
+    // توهّج عام فوق المشهد
+    var adj = outro.layers.addSolid([1, 1, 1], "GLOW_ADJ", CFG.W, CFG.H, 1, O.dur);
+    adj.adjustmentLayer = true;
+    try {
+        var gl = fx(adj, "ADBE Glo2");
+        gl.property("ADBE Glo2-0002").setValue(60);
+        gl.property("ADBE Glo2-0003").setValue(40);
+        gl.property("ADBE Glo2-0004").setValue(0.6);
+    } catch (eG) { }
+
+    // خط أحمر تحت الشعار يتمدد من المنتصف
+    var lineY = O.cy + hdLogo.height * sliceScale / 100 / 2 + 70;
+    var rl = shapeLayer(outro, "RED_LINE");
+    var rg = group(rl, "line");
+    path(rg, [[ox - 150, lineY], [ox + 150, lineY]]);
+    stroke(rg, CFG.red, 6);
+    var rtrim = C(rg).addProperty("ADBE Vector Filter - Trim");
+    var rs = rtrim.property("ADBE Vector Trim Start"), re = rtrim.property("ADBE Vector Trim End");
+    key(rs, 1.6, 50); key(rs, 2.1, 0, "out"); key(rs, 3.4, 0); key(rs, 3.8, 50);
+    key(re, 1.6, 50); key(re, 2.1, 100, "out"); key(re, 3.4, 100); key(re, 3.8, 50);
+    var sqs = group(rl, "squares");
+    rect(sqs, [14, 14], 0, [ox - 166, lineY]);
+    rect(sqs, [14, 14], 0, [ox + 166, lineY]);
+    fill(sqs, CFG.red);
+    var sqo = gx(sqs, "ADBE Vector Group Opacity");
+    key(sqo, 0, 0, "hold"); key(sqo, 2.05, 100, "hold"); key(sqo, 3.4, 0, "hold");
+
+    // إظهار في البداية وإخفاء في النهاية
+    var ofade = outro.layers.addSolid([0, 0, 0], "OUTRO_FADE", CFG.W, CFG.H, 1, O.dur);
+    var ofo = tr(ofade, "ADBE Opacity");
+    key(ofo, 0, 100, "linear"); key(ofo, 0.2, 0, "linear"); key(ofo, 3.4, 0); key(ofo, 4.0, 100);
+
+    // ================================================================ FINAL = الفيديو + الأوترو
+    var final = proj.items.addComp("FINAL_WITH_OUTRO", CFG.W, CFG.H, 1, D + O.dur, CFG.fps);
+    final.parentFolder = fRoot;
+    var fMain = final.layers.add(main);
+    var fOut = final.layers.add(outro);
+    fOut.startTime = D;
+    fMain.moveToEnd();
+    try { app.project.renderQueue.items.add(final); } catch (eQ) { }
+
     app.endUndoGroup();
 
     // حفظ المشروع
     var aep = new File(ROOT.fsName + "/" + CFG.projectName);
     try { proj.save(aep); } catch (e5) { warnings.push("تعذّر الحفظ التلقائي، احفظ يدوياً: " + e5.toString()); }
-    main.openInViewer();
+    final.openInViewer();
 
-    var msg = "تم بناء المشروع:\n" + aep.fsName + "\n\nالكومب الرئيسي: " + CFG.compName;
+    var msg = "تم بناء المشروع:\n" + aep.fsName + "\n\nالكومب النهائي: FINAL_WITH_OUTRO (مضاف إلى Render Queue)";
     if (warnings.length) msg += "\n\nملاحظات:\n- " + warnings.join("\n- ");
     alert(msg);
 })();
