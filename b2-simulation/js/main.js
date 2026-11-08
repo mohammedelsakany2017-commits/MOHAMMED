@@ -509,7 +509,6 @@ function initUI() {
 
 window.__renderAt = t => { render(t); renderer.getContext().finish(); };
 window.__duration = DUR;
-window.__debug = { camera, get b2() { return b2; } };
 window.__audioWavBase64 = async () => {
   const buf = new Uint8Array(await SFX.toWav(await SFX.renderOffline(EVENTS, DUR, SILENCE)).arrayBuffer());
   let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
