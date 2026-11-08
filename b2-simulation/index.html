@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>محاكاة افتراضية — B-2 Spirit / جبل الفأس</title>
+  <link rel="stylesheet" href="../vendor/fonts.css">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+  <div id="wrap"><canvas id="stage"></canvas></div>
+
+  <div id="intro" class="overlay">
+    <div class="intro-box">
+      <div class="kicker">مشروع وثائقي استقصائي</div>
+      <h1>محاكاة افتراضية</h1>
+      <p>B-2 Spirit — جبل الفأس، نطنز · ٤ مشاهد · 01:30</p>
+      <p class="warn">محاكاة افتراضية لأغراض توضيحية - ليست لقطات حقيقية أو تنبؤات علمية دقيقة</p>
+      <button id="start">▶ تشغيل</button>
+      <div class="keys"><span><kbd>مسافة</kbd> تشغيل/إيقاف</span><span><kbd>1</kbd>–<kbd>4</kbd> المشاهد</span><span><kbd>←</kbd><kbd>→</kbd> تقديم/ترجيع</span><span><kbd>F</kbd> ملء الشاشة</span></div>
+    </div>
+  </div>
+
+  <div id="controls" dir="ltr">
+    <button id="play">▶</button>
+    <div id="scrub"><input type="range" id="seek" min="0" max="90" step="0.01" value="0"><div id="marks"></div></div>
+    <span id="time">00:00 / 01:30</span>
+    <div class="scenes" id="scenes"></div>
+    <button id="mute" class="on" title="الصوت">♪</button>
+    <button id="wav" title="تصدير شريط الصوت WAV">WAV</button>
+    <button id="fs" title="ملء الشاشة">⛶</button>
+  </div>
+
+  <script src="../vendor/topojson-client.min.js"></script>
+  <script src="../data/world-50m.js"></script>
+  <script src="assets/layers.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

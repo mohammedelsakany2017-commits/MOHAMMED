@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "export": "node tools/export.mjs",
-    "stills": "node tools/export.mjs --stills 0.9,2.4,4.5,8.5,11,15,19,23,27,31,34,38,40,42.6,45,51.5,54,56.5,58.7"
+    "stills": "node tools/export.mjs --stills 0.9,2.4,4.5,8.5,11,15,19,23,27,31,34,38,40,42.6,45,51.5,54,56.5,58.7",
+    "b2:serve": "node b2-simulation/tools/serve.mjs",
+    "b2:export": "node b2-simulation/tools/export.mjs",
+    "b2:stills": "node b2-simulation/tools/export.mjs --stills 3,13.5,20,26,31.5,37,40,52,58,70,86"
   },
   "devDependencies": {
     "puppeteer-core": "^23.11.1"
