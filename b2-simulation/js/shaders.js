@@ -1,33 +1,37 @@
 // GLSL sources. Written GLSL1-style (varying / gl_FragColor); three.js compiles them as GLSL ES 3.0.
 
 export const terrainVert = /* glsl */`
-uniform sampler2D uDem;
-uniform float uHasDem, uExag, uHeightFeather, uLift;
-uniform vec2 uDemTexel, uSizeKm;
-uniform vec4 uDemRect;
+uniform sampler2D uDem, uPDem;
+uniform float uHasDem, uHasPDem, uExag, uLift, uDemStep;
+uniform vec4 uDemRect, uPDemRect;
 varying vec2 vUv;
 varying vec3 vWorld;
 varying vec3 vNormalW;
 
 float edgeF(vec2 uv) { return smoothstep(0.0, 0.07, min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y))); }
-float hAt(vec2 uv) { return texture(uDem, uv).r * uExag; }
+float demH(sampler2D t, vec4 r, vec2 w) {
+  vec2 d = (w - r.xy) / (r.zw - r.xy);
+  d.y = 1.0 - d.y;
+  return max(texture(t, clamp(d, 0.0, 1.0)).r, 0.0) * uExag;
+}
+// own height blended into the parent layer's height at the imagery edges (mirrors geo.js heightAt)
+float H(vec2 w, float f) {
+  float p = uHasPDem > 0.5 ? demH(uPDem, uPDemRect, w) : 0.0;
+  return mix(p, demH(uDem, uDemRect, w), f);
+}
 
 void main() {
   vUv = uv;
   vec3 p = position;
   vec3 n = vec3(0.0, 1.0, 0.0);
   if (uHasDem > 0.5) {
-    // the DEM has its own (larger) footprint, so address it in world space; feathering follows the imagery tile
     vec2 w0 = (modelMatrix * vec4(position, 1.0)).xz;
-    vec2 d = (w0 - uDemRect.xy) / (uDemRect.zw - uDemRect.xy);
-    d.y = 1.0 - d.y;
-    float f = mix(1.0, edgeF(uv), uHeightFeather);
-    float hx = hAt(d + vec2(uDemTexel.x, 0.0)) - hAt(d - vec2(uDemTexel.x, 0.0));
-    float hz = hAt(d + vec2(0.0, uDemTexel.y)) - hAt(d - vec2(0.0, uDemTexel.y));
-    vec3 tx = vec3(2.0 * uDemTexel.x * uSizeKm.x, hx * f, 0.0);
-    vec3 tz = vec3(0.0, hz * f, -2.0 * uDemTexel.y * uSizeKm.y);
-    n = normalize(cross(tx, tz));
-    p.y += hAt(d) * f + uLift * edgeF(uv);
+    float f = uHasPDem > 0.5 ? edgeF(uv) : 1.0;
+    float e = uDemStep;
+    float hx = H(w0 + vec2(e, 0.0), f) - H(w0 - vec2(e, 0.0), f);
+    float hz = H(w0 + vec2(0.0, e), f) - H(w0 - vec2(0.0, e), f);
+    n = normalize(vec3(-hx, 2.0 * e, -hz));
+    p.y += H(w0, f) + uLift * edgeF(uv);
   }
   vec4 w = modelMatrix * vec4(p, 1.0);
   vWorld = w.xyz;
@@ -36,10 +40,13 @@ void main() {
 }`;
 
 export const terrainFrag = /* glsl */`
-uniform sampler2D uMap, uNightTex, uFallTex;
+uniform sampler2D uMap, uNightTex, uFallTex, uFacTex, uFacEmi;
 uniform float uGain, uAlphaFeather, uTactical, uFlash, uFire, uShockR, uFallout, uFogDen, uGridA, uDim, uLights;
+uniform float uMoonI, uFacOn, uFacLight, uFireR, uFireA, uDetail, uTexA;
+uniform vec4 uHole;
 uniform vec3 uExpPos, uMoonDir, uCamPos, uFogCol, uMerc;
-uniform vec4 uNightRect, uFallRect;
+uniform vec4 uNightRect, uFallRect, uFacRect;
+uniform vec2 uCityDir[8];
 varying vec2 vUv;
 varying vec3 vWorld;
 varying vec3 vNormalW;
@@ -48,45 +55,95 @@ float gridLine(float v, float step) {
   float g = abs(fract(v / step + 0.5) - 0.5) * step;
   return 1.0 - smoothstep(0.0, fwidth(v) * 1.2, g);
 }
+float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p) {
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1, 0)), u.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), u.x), u.y);
+}
 
 void main() {
-  vec3 albedo = texture(uMap, vUv).rgb;
+  // the parent layer steps aside under the opaque interior of the finer child imagery (coarser DEMs would poke through)
+  if (uHole.z > uHole.x && all(greaterThan(vWorld.xz, uHole.xy)) && all(lessThan(vWorld.xz, uHole.zw))) discard;
+  vec4 mapC = texture(uMap, vUv);
+  vec3 albedo = mapC.rgb;
   float edgeA = uAlphaFeather > 0.5 ? smoothstep(0.0, 0.1, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y))) : 1.0;
   vec3 n = normalize(vNormalW);
+  float camD = length(vWorld - uCamPos);
 
-  // tactical (documentary map) grade: desaturated, cool, relief-shaded
+  // fine procedural rock/soil variation for close shots (30 m imagery is soft up close)
+  if (uDetail > 0.0) {
+    float k = uDetail * (1.0 - smoothstep(4.0, 30.0, camD));
+    float dn = vn(vWorld.xz * 55.0) * 0.5 + vn(vWorld.xz * 160.0) * 0.3 + vn(vWorld.xz * 420.0) * 0.2;
+    albedo *= mix(1.0, 0.78 + 0.44 * dn, k);
+  }
+  // simulated facility overlay (roads, portals, gates)
+  vec3 facEmi = vec3(0.0);
+  if (uFacOn > 0.0) {
+    vec2 fu = (vWorld.xz - uFacRect.xy) / (uFacRect.zw - uFacRect.xy);
+    if (fu.x > 0.0 && fu.x < 1.0 && fu.y > 0.0 && fu.y < 1.0) {
+      vec4 fc = texture(uFacTex, fu);
+      albedo = mix(albedo, fc.rgb, fc.a * uFacOn);
+      facEmi = texture(uFacEmi, fu).rgb * uFacLight * uFacOn;
+    }
+  }
+
+  // documentary map grade: natural NASA colours, slightly cooled, relief-shaded
   float lum = dot(albedo, vec3(0.2126, 0.7152, 0.0722));
   float hs = clamp(dot(n, normalize(vec3(-0.6, 0.9, -0.5))), 0.0, 1.0);
-  // uGain evens out brightness between Blue Marble and Sentinel-2 tiles
-  vec3 tac = mix(vec3(lum), albedo, 0.3) * vec3(0.64, 0.74, 0.9) * (0.28 + 0.9 * hs) * 0.48 * uGain;
+  vec3 tac = mix(vec3(lum), albedo, 0.82) * vec3(0.9, 0.95, 1.04) * (0.32 + 0.85 * hs) * 0.62 * uGain;
 
   // moonlit night with city lights (VIIRS)
-  float moon = max(dot(n, uMoonDir), 0.0);
-  vec3 night = mix(vec3(lum), albedo, 0.45) * vec3(0.5, 0.6, 0.85) * (0.016 + 0.075 * moon);
+  float moon = clamp(dot(n, uMoonDir) * 0.75 + 0.25, 0.0, 1.0);  // wrapped, so slopes facing away are dim rather than black
+  vec3 night = mix(vec3(lum), albedo, 0.5) * vec3(0.5, 0.6, 0.85) * (0.016 + uMoonI * moon);
   vec2 nuv = (vWorld.xz - uNightRect.xy) / (uNightRect.zw - uNightRect.xy);
   if (nuv.x > 0.0 && nuv.x < 1.0 && nuv.y > 0.0 && nuv.y < 1.0) {
     vec3 nl = texture(uNightTex, vec2(nuv.x, 1.0 - nuv.y)).rgb;
-    // keep only bright urban cores so towns read as small light clusters, not glow
+    // keep only bright urban cores, broken into scattered points (the VIIRS layer is ~600 m/px)
     float li = smoothstep(0.32, 0.85, dot(nl, vec3(0.333)));
-    // the VIIRS layer is ~600 m/px: break each town into scattered points so it does not read as a flat disc
-    vec2 cell = floor(vWorld.xz * 8.0);
-    float hsh = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
-    li *= step(0.72, hsh) * (0.5 + hsh) * 1.6;
+    vec2 cp = vWorld.xz * 8.0, cell = floor(cp);
+    float hsh = h21(cell);
+    // round point lights, faded out in close-ups (the facility has its own lamps)
+    float dotM = 1.0 - smoothstep(0.12, 0.3, length(fract(cp) - 0.5 - (vec2(h21(cell + 3.1), h21(cell + 7.7)) - 0.5) * 0.4));
+    li *= step(0.72, hsh) * (0.5 + hsh) * 1.6 * mix(1.0, dotM, smoothstep(60.0, 15.0, camD)) * smoothstep(6.0, 25.0, camD);
     night += li * li * vec3(1.0, 0.82, 0.58) * uLights * (1.0 - uTactical);
   }
-  vec3 col = mix(night, tac, uTactical);
+  vec3 col = mix(night, tac, uTactical) + facEmi * (1.0 - uTactical);
 
   // light from the (hypothetical) detonation: initial flash + lingering fireball glow
   vec3 L = uExpPos - vWorld;
   float d = length(L);
   float ndl = max(dot(n, L / max(d, 1e-3)), 0.0) * 0.85 + 0.15;
-  col += albedo * ndl * (uFlash * vec3(1.0, 0.97, 0.92) * 90.0 / (1.0 + d * d / 30.0)
-                       + uFire * vec3(1.0, 0.42, 0.1) * 9.0 / (1.0 + d * d / 6.0));
+  col += albedo * ndl * (uFlash * vec3(1.0, 0.97, 0.92) * 260.0 / (1.0 + d * d / 30.0)
+                       + uFire * vec3(1.0, 0.42, 0.1) * 30.0 / (1.0 + d * d / 12.0));
+  float rd = length(vWorld.xz - uExpPos.xz);
   if (uShockR > 0.01) {
-    float rd = length(vWorld.xz - uExpPos.xz);
-    float ring = exp(-pow((rd - uShockR) / 1.2, 2.0)) * exp(-uShockR / 12.0);
-    col = mix(col, col * 0.55, smoothstep(uShockR, uShockR - 2.0, rd) * 0.6);
+    float ring = exp(-pow((rd - uShockR) / 1.6, 2.0)) * exp(-uShockR / 20.0);
+    col = mix(col, col * 0.5, smoothstep(uShockR, uShockR - 3.0, rd) * 0.6);
     col = mix(col, vec3(0.32, 0.27, 0.22) * (0.04 + 0.35 * uFire), ring * 0.55);
+  }
+
+  // illustrative fire front spreading outward, reaching toward the surrounding cities first
+  if (uFireA > 0.0 && uFireR > 0.0) {
+    vec2 dv = vWorld.xz - uExpPos.xz;
+    vec2 dir = dv / max(rd, 1e-3);
+    float reach = 0.0;
+    for (int i = 0; i < 8; i++) reach += exp(-pow((1.0 - dot(dir, uCityDir[i])) / 0.012, 1.0));
+    float th = atan(dv.y, dv.x);
+    float R = uFireR * (1.0 + 0.55 * min(reach, 1.5)) * (0.9 + 0.2 * vn(vec2(th * 6.0, 1.3)));
+    float w = 0.5 + 0.025 * R;
+    float rn = rd + (vn(vec2(th * 40.0, rd * 0.4)) - 0.5) * w * 2.6 + (vn(vWorld.xz * 1.3) - 0.5) * w * 1.5;
+    float band = exp(-pow((rn - R) / w, 2.0));
+    float inside = smoothstep(R + w, R - w, rn);
+    // broken, flickering flame line: patches of fire rather than a continuous neon ring
+    float patchy = smoothstep(0.35, 0.75, vn(vWorld.xz * 2.2 + vec2(uFireR * 0.7, 0.0)));
+    float flick = 0.6 + 0.4 * vn(vWorld.xz * 9.0 + uFireR * 3.0);
+    float fade = uFireA * exp(-R / 160.0);
+    col *= 1.0 - 0.6 * inside * uFireA;                                     // scorched ground
+    float emb = step(0.88, vn(vWorld.xz * 7.0)) * exp(-max(R - rd, 0.0) / 6.0) * inside;
+    vec3 flame = mix(vec3(0.9, 0.12, 0.02), vec3(1.0, 0.62, 0.18), band * flick);
+    col += (flame * band * patchy * flick * 1.6 + vec3(1.0, 0.25, 0.03) * emb * 0.9) * fade;
+    // smoke shadow just ahead of the front
+    col *= 1.0 - 0.35 * exp(-pow((rn - R - 2.0 * w) / (2.0 * w), 2.0)) * uFireA;
   }
 
   // lat/lon graticule (tactical scenes)
@@ -96,7 +153,7 @@ void main() {
     float lon = mx * 360.0 - 180.0;
     float lat = degrees(atan(sinh(3.14159265 * (1.0 - 2.0 * my))));
     float g = max(gridLine(lon, 5.0), gridLine(lat, 5.0)) * 0.7 + max(gridLine(lon, 1.0), gridLine(lat, 1.0)) * 0.25;
-    col += vec3(0.55, 0.75, 1.0) * g * 0.07 * uGridA;
+    col += vec3(0.55, 0.75, 1.0) * g * 0.06 * uGridA;
   }
 
   // illustrative fallout layer (qualitative bands only)
@@ -104,18 +161,20 @@ void main() {
   if (uFallout > 0.0 && fuv.x > 0.0 && fuv.x < 1.0 && fuv.y > 0.0 && fuv.y < 1.0) {
     vec4 f = texture(uFallTex, fuv);
     float I = f.r;
-    float reveal = smoothstep(uFallout, uFallout - 0.04, f.g);
+    float reveal = smoothstep(uFallout, uFallout - 0.03, f.g);
     vec3 fc = mix(vec3(1.0, 0.86, 0.35), vec3(0.95, 0.42, 0.08), smoothstep(0.15, 0.45, I));
     fc = mix(fc, vec3(0.45, 0.02, 0.02), smoothstep(0.45, 0.85, I));
-    float a = smoothstep(0.1, 0.24, I) * reveal * 0.68;
-    float c = abs(fract(I * 4.0 + 0.5) - 0.5) / max(fwidth(I * 4.0), 1e-4);
-    float line = (1.0 - smoothstep(0.0, 1.2, c)) * step(0.2, I) * reveal;
-    col = mix(col, col * 0.35 + fc * 0.32, a) + fc * line * 0.08;
+    float a = smoothstep(0.06, 0.2, I) * reveal * 0.7;
+    float c = abs(fract(I * 5.0 + 0.5) - 0.5) / max(fwidth(I * 5.0), 1e-4);
+    float line = (1.0 - smoothstep(0.0, 1.2, c)) * step(0.12, I) * reveal;
+    // advancing edge glow
+    float edge = exp(-pow((f.g - uFallout) / 0.012, 2.0)) * step(0.05, I) * (1.0 - step(1.0, uFallout));
+    col = mix(col, col * 0.3 + fc * 0.36, a) + fc * line * 0.1 + vec3(1.0, 0.3, 0.15) * edge * 0.18;
   }
 
-  float fog = 1.0 - exp(-length(vWorld - uCamPos) * uFogDen);
+  float fog = 1.0 - exp(-camD * uFogDen);
   col = mix(col, uFogCol, fog);
-  gl_FragColor = vec4(col * uDim, edgeA);
+  gl_FragColor = vec4(col * uDim, edgeA * mix(1.0, mapC.a, uTexA));
 }`;
 
 export const skyVert = /* glsl */`
@@ -167,6 +226,7 @@ uniform vec2 uCloudY;
 uniform vec3 uCloudWind;
 uniform float uExpOn, uTe, uFlash, uFire;
 uniform vec3 uExpC, uBoxMin, uBoxMax;
+uniform float uExpS;
 uniform vec4 uFb, uCap, uStem, uSurge, uShell;
 varying vec2 vUv;
 
@@ -267,7 +327,7 @@ vec4 marchClouds(vec3 ro, vec3 rd, float t0, float t1, float jit) {
       float hgt = clamp((p.y - uCloudY.x) / (uCloudY.y - uCloudY.x), 0.0, 1.0);
       vec3 c = vec3(0.8, 0.84, 0.9) * (uMoonCol * (0.12 + 0.88 * sh) * (0.45 + 0.55 * hgt) + vec3(0.002, 0.0025, 0.004));
       if (uExpOn > 0.5) {
-        vec3 L = uExpC + vec3(0.0, uFb.x, 0.0) - p;
+        vec3 L = uExpC + vec3(0.0, uFb.x * uExpS, 0.0) - p;
         float dd = dot(L, L);
         c += vec3(1.0, 0.96, 0.9) * uFlash * 140.0 / (1.0 + dd / 40.0) + vec3(1.0, 0.45, 0.12) * uFire * 6.0 / (1.0 + dd / 12.0);
       }
@@ -289,7 +349,7 @@ vec4 marchExplosion(vec3 ro, vec3 rd, float t0, float t1, float jit) {
   float t = t0 + dt * jit;
   vec3 fbc = vec3(0.0, uFb.x, 0.0);
   for (int i = 0; i < N; i++) {
-    vec3 q = ro + rd * t - uExpC;
+    vec3 q = (ro + rd * t - uExpC) / uExpS;   // explosion shape is authored in units scaled by uExpS
     float heat;
     float den = expD(q, heat);
     if (den > 0.002) {
@@ -304,7 +364,7 @@ vec4 marchExplosion(vec3 ro, vec3 rd, float t0, float t1, float jit) {
                         + vec3(1.0, 0.42, 0.12) * uFire * 2.6 * fl * exp(-occF * 1.2)
                         + vec3(1.0, 0.95, 0.9) * uFlash * 30.0);
       c += blackbody(heat) * pow(heat, 1.5) * 20.0;
-      float a = 1.0 - exp(-den * dt * 5.0);
+      float a = 1.0 - exp(-den * dt / uExpS * 5.0);
       acc += T * a * c;
       T *= 1.0 - a;
       if (T < 0.01) break;
@@ -333,7 +393,7 @@ void main() {
     if (s.y > s.x) { cl = marchClouds(ro, rd, s.x, s.y, jit); tc = s.x; }
   }
   if (uExpOn > 0.5) {
-    vec2 b = box(ro, rd, uExpC + uBoxMin, uExpC + uBoxMax);
+    vec2 b = box(ro, rd, uExpC + uBoxMin * uExpS, uExpC + uBoxMax * uExpS);
     b.y = min(b.y, tMax);
     if (b.y > b.x) { ex = marchExplosion(ro, rd, b.x, b.y, jit); te = b.x; }
   }

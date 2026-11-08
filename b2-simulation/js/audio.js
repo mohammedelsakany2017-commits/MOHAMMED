@@ -111,6 +111,47 @@ const FX = {
     const n = m.noise(w, 0.12, 'white', 0.1); const hp = m.filt('highpass', 3000); const g = m.perc(w, 0.09, 0.25, 0.001);
     m.chain(n, hp, g, m.out);
   },
+  launch(m, w, d, ev) {  // distant missile launch: low roar swelling then receding
+    const p = m.pan(ev.pan ?? 0); p.connect(m.out);
+    const n = m.noise(w, d, 'brown', w * 0.37); const lp = m.filt('lowpass', 420, 0.7);
+    const g = m.ctx.createGain(); g.gain.setValueAtTime(0.0001, w); g.gain.exponentialRampToValueAtTime(ev.v ?? 0.2, w + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, w + d);
+    m.chain(n, lp, g, p);
+    const h = m.noise(w, d * 0.6, 'white', w * 0.71); const bp = m.filt('bandpass', 900, 0.8);
+    bp.frequency.setValueAtTime(600, w); bp.frequency.exponentialRampToValueAtTime(2400, w + d * 0.6);
+    const hg = m.perc(w, d * 0.6, (ev.v ?? 0.2) * 0.25, 0.08); m.chain(h, bp, hg, p);
+  },
+  thud(m, w, d, ev) {  // far-away impact
+    const p = m.pan(ev.pan ?? 0); p.connect(m.out);
+    const o = m.osc('sine', 60, w, d); o.frequency.exponentialRampToValueAtTime(32, w + 0.8);
+    const g = m.perc(w, d * 0.8, ev.v ?? 0.25, 0.006); m.chain(o, g, p);
+    const n = m.noise(w, d, 'brown', w * 0.13); const lp = m.filt('lowpass', 220); const ng = m.perc(w, d, (ev.v ?? 0.25) * 0.8, 0.02); m.chain(n, lp, ng, p);
+  },
+  buzz(m, w, d, ev) {  // small propeller drone, very faint
+    const g = m.bed(w, d, ev.v ?? 0.03, 1, 1); const p = m.pan(ev.pan ?? 0); g.connect(p); p.connect(m.out);
+    const o = m.osc('sawtooth', 118, w, d); const bp = m.filt('bandpass', 700, 1.5); m.chain(o, bp, g);
+    m.lfo(7, 6, o.frequency, w, d);
+  },
+  clunk(m, w, d, ev) {  // bomb-bay release mechanism
+    for (const [dt, f] of [[0, 140], [0.09, 95], [0.2, 180]]) {
+      const n = m.noise(w + dt, 0.15, 'white', dt * 9); const bp = m.filt('bandpass', f * 6, 2); const g = m.perc(w + dt, 0.12, ev.v ?? 0.4, 0.002);
+      m.chain(n, bp, g, m.out);
+      const o = m.osc('square', f, w + dt, 0.1); const og = m.perc(w + dt, 0.08, (ev.v ?? 0.4) * 0.15, 0.002); const lp = m.filt('lowpass', 600); m.chain(o, lp, og, m.out);
+    }
+  },
+  whistle(m, w, d, ev) {  // falling-object air whistle, pitch dropping
+    const n = m.noise(w, d, 'white', 1.9); const bp = m.filt('bandpass', 2600, 18);
+    bp.frequency.setValueAtTime(2600, w); bp.frequency.exponentialRampToValueAtTime(700, w + d);
+    const g = m.ctx.createGain(); g.gain.setValueAtTime(0.0001, w); g.gain.exponentialRampToValueAtTime(ev.v ?? 0.12, w + d * 0.9); g.gain.linearRampToValueAtTime(0, w + d);
+    m.chain(n, bp, g, m.out);
+  },
+  crackle(m, w, d, ev) {  // spreading fire: crackle over a low roar
+    const g = m.bed(w, d, ev.v ?? 0.12, ev.fin ?? 2, ev.fout ?? 2); g.connect(m.out);
+    const r = m.noise(w, d, 'brown', 0.5); const lp = m.filt('lowpass', 300); const rg = m.gain(0.8); m.chain(r, lp, rg, g);
+    const n = m.noise(w, d, 'white', 2.7); const hp = m.filt('highpass', 2200); const cg = m.gain(0.0); m.chain(n, hp, cg, g);
+    // randomised crackle envelope
+    let tt = 0, k = 0;
+    while (tt < d) { const h = Math.abs(Math.sin((k + 3) * 71.3) * 1e4) % 1; k++; tt += 0.02 + h * 0.12; cg.gain.setValueAtTime(0.5 * h, w + tt); cg.gain.setTargetAtTime(0, w + tt + 0.004, 0.01); }
+  },
   geiger(m, w, d, ev) {
     let t = 0, k = 0;
     while (t < d) {
