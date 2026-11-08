@@ -417,7 +417,8 @@ async function init() {
   envMap = new THREE.PMREMGenerator(renderer).fromScene(envScene, 0, 0.1, 1000).texture;
   scene.add(sky);
 
-  b2 = buildB2(envMap); b2.scale.setScalar(0.001); scene.add(b2);
+  const b2img = new Image(); b2img.src = 'assets/b2-top.png'; await b2img.decode();
+  b2 = buildB2(envMap, b2img); b2.scale.setScalar(0.001); scene.add(b2);
   moonLight.position.copy(U.uMoonDir.value).multiplyScalar(100);
 
   G0 = GEO.groundAt(GEO.TARGET.lon, GEO.TARGET.lat);

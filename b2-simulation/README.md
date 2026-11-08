@@ -50,5 +50,6 @@ uv run --with pillow --with numpy b2-simulation/tools/fetch_tiles.py
 - NASA Blue Marble Next Generation و VIIRS Black Marble 2016 عبر NASA GIBS (ملكية عامة).
 - Sentinel-2 cloudless 2016 من EOX، ترخيص CC BY 4.0 (يتضمن بيانات Copernicus Sentinel معدّلة، 2016).
 - بيانات الارتفاع: Terrain Tiles (Mapzen / AWS Open Data). الحدود: Natural Earth عبر world-atlas.
+- صورة الطائرة العلوية `assets/b2-top.png` قدّمها المستخدم، ويُستخرج منها شكل الطائرة ثلاثي الأبعاد (حدود الأجنحة) وتُستخدم كخامة للسطح العلوي.
 - Three.js (ترخيص MIT، `vendor/THREE-LICENSE`). الخطوط: Cairo و Tajawal (SIL OFL).
 - موقع «جبل الفأس» (كوه كلنگ گزلا) تقريبي ومأخوذ من تقارير مفتوحة. التضاريس مضخّمة رأسياً ×1.6 لإبراز الطبيعة الجبلية.

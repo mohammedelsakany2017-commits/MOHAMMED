@@ -22,6 +22,44 @@ function zTE(x) {
 const foil = u => Math.max(0, (0.2969 * Math.sqrt(u) - 0.126 * u - 0.3516 * u * u + 0.2843 * u ** 3 - 0.1036 * u ** 4) / 0.1) * (1 - u ** 10);
 const bump = (u, a, b) => (u <= a || u >= b ? 0 : Math.sin(Math.PI * (u - a) / (b - a)) ** 2);
 
+// Planform + UV mapping. Defaults to the analytic planform; replaced by one traced from a top-view image.
+let SHAPE = {
+  le: x => zLE(Math.abs(x)),
+  te: x => zTE(Math.abs(x)),
+  uv: (x, z) => [(x + HALF) / (2 * HALF), 1 - z / 21.5],
+  stations: () => stations(),
+};
+
+// Trace leading/trailing edges column by column from the image's alpha mask, so the 3D silhouette
+// matches the picture exactly; the image is scaled so its wingspan equals the real 52.4 m.
+function shapeFromImage(img) {
+  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0);
+  const { data } = g.getImageData(0, 0, c.width, c.height);
+  const W = c.width, H = c.height, top = new Float32Array(W).fill(-1), bot = new Float32Array(W).fill(-1);
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) if (data[(y * W + x) * 4 + 3] > 128) { top[x] = y; break; }
+    for (let y = H - 1; y >= 0; y--) if (data[(y * W + x) * 4 + 3] > 128) { bot[x] = y + 1; break; }
+  }
+  let x0 = 0, x1 = W - 1;
+  while (top[x0] < 0) x0++;
+  while (top[x1] < 0) x1--;
+  let nose = H; for (let x = x0; x <= x1; x++) if (top[x] >= 0) nose = Math.min(nose, top[x]);
+  const k = (x1 + 1 - x0) / (2 * HALF), cx = (x0 + x1 + 1) / 2;
+  const col = (arr, x) => {
+    const p = THREE.MathUtils.clamp(cx + x * k, x0, x1), i = Math.floor(p), f = p - i, j = Math.min(i + 1, x1);
+    const a = arr[i] >= 0 ? arr[i] : arr[j], b = arr[j] >= 0 ? arr[j] : arr[i];
+    return (a + (b - a) * f - nose) / k;
+  };
+  const span = (x1 + 1 - x0) / k / 2 - 0.08;
+  return {
+    le: x => col(top, x),
+    te: x => col(bot, x),
+    uv: (x, z) => [(cx + x * k) / W, 1 - (nose + z * k) / H],
+    stations: () => Array.from({ length: 241 }, (_, i) => -span + 2 * span * i / 240),
+  };
+}
+
 function surfaceY(x, u, chord, top) {
   const ax = Math.abs(x);
   const ratio = 0.052 + 0.1 * Math.exp(-((ax / 7.5) ** 2));
@@ -30,7 +68,7 @@ function surfaceY(x, u, chord, top) {
   if (!top) return -t * 0.36;
   // crew compartment hump and the two buried engine nacelle humps
   const crew = 0.95 * Math.exp(-((ax / 2.4) ** 2)) * bump(u, 0.02, 0.55);
-  const nacelle = 0.55 * Math.exp(-(((ax - 5.0) / 1.6) ** 2)) * bump(u, 0.2, 0.8);
+  const nacelle = 0.55 * Math.exp(-(((ax - 4.1) / 1.6) ** 2)) * bump(u, 0.2, 0.8);
   return t * 0.64 + crew + nacelle;
 }
 
@@ -43,15 +81,15 @@ function stations() {
 }
 
 function buildSurface(top) {
-  const xs = stations(), NU = 48;
+  const xs = SHAPE.stations(), NU = 48;
   const us = Array.from({ length: NU + 1 }, (_, i) => (1 - Math.cos(i / NU * Math.PI)) / 2);
   const pos = [], uv = [], idx = [];
   for (const x of xs) {
-    const ax = Math.abs(x), z0 = zLE(ax), z1 = zTE(ax), chord = z1 - z0;
+    const z0 = SHAPE.le(x), z1 = SHAPE.te(x), chord = Math.max(z1 - z0, 0.05);
     for (const u of us) {
       const z = z0 + chord * u;
       pos.push(x, surfaceY(x, u, chord, top), z);
-      uv.push((x + HALF) / (2 * HALF), 1 - z / 21.5);
+      uv.push(...SHAPE.uv(x, z));
     }
   }
   const row = NU + 1;
@@ -129,20 +167,35 @@ function skinTextures(top) {
   return { tex, rough };
 }
 
-export function buildB2(envMap) {
+export function buildB2(envMap, img) {
   const group = new THREE.Group();
-  const mats = [true, false].map(top => {
-    const { tex, rough } = skinTextures(top);
-    return new THREE.MeshStandardMaterial({
-      color: 0x62686f, map: tex, roughness: 0.72, roughnessMap: rough, metalness: 0.1,
-      envMap, envMapIntensity: 0.4,
+  let mats;
+  if (img) {
+    SHAPE = shapeFromImage(img);
+    const top = new THREE.Texture(img); top.colorSpace = THREE.SRGBColorSpace; top.anisotropy = 8; top.needsUpdate = true;
+    // underside: same planform, details softened so the mirrored markings are not readable from below
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const g = c.getContext('2d'); g.filter = 'grayscale(0.7) brightness(0.6) blur(4px)'; g.drawImage(img, 0, 0);
+    const bottom = new THREE.CanvasTexture(c); bottom.colorSpace = THREE.SRGBColorSpace; bottom.anisotropy = 8;
+    mats = [top, bottom].map(map => new THREE.MeshPhysicalMaterial({
+      // radar-absorbent coating: matte, with a weak specular lobe so grazing moonlight does not wash out the texture
+      color: 0x8a8a8a, map, roughness: 0.85, metalness: 0, specularIntensity: 0.12, envMap, envMapIntensity: 0.25,
+    }));
+  } else {
+    mats = [true, false].map(top => {
+      const { tex, rough } = skinTextures(top);
+      return new THREE.MeshStandardMaterial({
+        color: 0x62686f, map: tex, roughness: 0.72, roughnessMap: rough, metalness: 0.1,
+        envMap, envMapIntensity: 0.4,
+      });
     });
-  });
+  }
   group.add(new THREE.Mesh(buildSurface(true), mats[0]));
   group.add(new THREE.Mesh(buildSurface(false), mats[1]));
   // very dim navigation lights (wingtips, tail)
   const lights = [];
-  for (const [x, z, col] of [[-HALF + 0.3, zLE(HALF) + 1.6, 0xff2a20], [HALF - 0.3, zLE(HALF) + 1.6, 0x20ff5a], [0, 20.6, 0xffffff]]) {
+  const tip = HALF - 0.4, tipZ = (SHAPE.le(tip) + SHAPE.te(tip)) / 2;
+  for (const [x, z, col] of [[-tip, tipZ, 0xff2a20], [tip, tipZ, 0x20ff5a], [0, SHAPE.te(0) - 0.4, 0xffffff]]) {
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), new THREE.MeshBasicMaterial({ color: col }));
     m.position.set(x, 0.05, z);
     group.add(m); lights.push(m);
