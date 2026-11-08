@@ -1,0 +1,35 @@
+{
+  "input": "../.hoplite/attachments/art_upload_26fbc33119b9476c875f62b3300dd931/art_run8814b1c3d71744debc920a7f38453dc4_b04a9d01f1a1.mp4",
+  "output": "output/abdul_el_sayed_ultra.mp4",
+  "font": "~/.fonts/Cairo.ttf",
+  "fps": 30,
+
+  "video_crop": {"w": 1080, "h": 1352, "x": 0, "y": 0},
+  "bottom_gradient": {"from_y": 1000, "opacity": 0.6},
+
+  "big": {
+    "lines": ["عبد السيد: يريدون أمريكا", "أضيق من أن تتسع لبعضنا", "لكنها تتسع لنا جميعاً"],
+    "size": 84, "weight": "Bold", "kashida": true,
+    "x_right": 885, "y_first": 1270, "leading": 118, "icon": [938, 1182], "max_width": 790
+  },
+  "lower": {
+    "lines": ["عبد السيد: يريدون أمريكا أضيق من أن", "تتسع لبعضنا، لكنها تتسع لنا جميعاً"],
+    "size": 52, "weight": "Bold",
+    "x_right": 892, "y_first": 1480, "leading": 75, "icon": [943, 1459], "max_width": 800
+  },
+  "location": {"text": "ميشيغان", "pos": [280, 288], "size": 30},
+  "credit": {"text": "MS NOW", "pos": [84, 627], "size": 28},
+  "logo_pos": [751, 246],
+
+  "timing": {
+    "icon_pop": 0.15,
+    "big_type": [0.35, 2.9],
+    "deco": [0.9, 1.9],
+    "big_out": [5.3, 5.8],
+    "lower_type": [5.95, 7.0],
+    "loc_in": 1.3,
+    "credit_in": 2.0,
+    "logo_in": 2.9,
+    "end_fade": 0.7
+  }
+}

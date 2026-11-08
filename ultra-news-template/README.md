@@ -31,3 +31,15 @@
 - **إظهار/إخفاء المؤشر**: خانة `Cursor` في نفس الطبقة.
 - **تحريك عنصر كامل**: حرّك الـ Null المسمّى `*_CTRL`.
 - **التوقيتات الافتراضية والألوان**: كائن `CFG` أعلى السكربت (اللون الأحمر `C8102E`).
+
+## تطبيق القالب مباشرة على فيديو (بدون After Effects)
+`render_template.py` يرسم نفس عناصر القالب (الشعار والأيقونة المستخرجان من الفيديو المرجعي في `assets/`) فوق أي فيديو عمودي:
+
+```bash
+python render_template.py abdul_el_sayed.json                     # فيديو نهائي mp4
+python render_template.py abdul_el_sayed.json --still 4.5 out.png # معاينة إطار واحد
+```
+- المتطلبات: `ffmpeg`، وPillow مع libraqm، وnumpy، وخط Cairo.
+- كل النصوص والمواضع والتوقيتات في ملف JSON. `max_width` يصغّر الخط تلقائياً إذا طال العنوان.
+- `video_crop` يقصّ شريطاً محروقاً في أسفل المادة ثم يملأ الإطار.
+- `"graphics_only": true` يُخرج طبقة الجرافيك وحدها بصيغة ProRes 4444 شفافة لاستيرادها في After Effects أو Premiere.
