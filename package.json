@@ -1,0 +1,11 @@
+{
+  "name": "gaza-yellow-line-map-animation",
+  "version": "1.0.0",
+  "description": "Professional cinematic map animation of the Gaza Strip with camera Zoom In/Out and Yellow Line visualization",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "render-video": "node render_video.js"
+  }
+}
